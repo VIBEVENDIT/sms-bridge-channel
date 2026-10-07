@@ -2,19 +2,24 @@
 
 Public docs + update feed for the Hotel at Gangnam SMS bridge. Do not put secrets here.
 
-## Current: phone bridge (v2)
+## Current: phone bridge (v3)
 
-The hotel Android phone runs SMS Gateway for Android (sms-gate.app) and talks to the Vercel ops app. Inbound SMS, staff replies, and guest auto-replies all show up in Slack `#lounge-호텔앳강남` as 「앳강남 막내」.
+A small Android app on the hotel phone (AtGangnam SMS Bridge) syncs every inbound and outbound SMS/MMS to Slack `#lounge-호텔앳강남` and sends policy-based auto-replies, in the same format as the hotel mail handoff (`*[문자수신]*`, `:loading:`, `:완료:`). Release APKs are published on this repo's Releases (`android-v*`).
 
-- Install on the hotel phone: [docs/phone-bridge/INSTALL-ANDROID.md](docs/phone-bridge/INSTALL-ANDROID.md)
-- Design, auto-reply rules, acceptance criteria: [docs/phone-bridge/DESIGN.md](docs/phone-bridge/DESIGN.md)
-- Implementation handoff + merge gate: [docs/phone-bridge/HANDOFF.md](docs/phone-bridge/HANDOFF.md)
+| Doc | |
+| --- | --- |
+| [INSTALL-ANDROID.md](docs/phone-bridge/INSTALL-ANDROID.md) | Install on the hotel phone (Korean) |
+| [DESIGN.md](docs/phone-bridge/DESIGN.md) | Architecture, exactly-once sync, auth, state |
+| [LOUNGE-FORMAT.md](docs/phone-bridge/LOUNGE-FORMAT.md) | Slack message format spec |
+| [AUTO-REPLY.md](docs/phone-bridge/AUTO-REPLY.md) | Mail rule mapping, policy KB, guards |
+| [ACCEPTANCE.md](docs/phone-bridge/ACCEPTANCE.md) | Acceptance criteria, real-phone QA, release gates |
+| [HANDOFF.md](docs/phone-bridge/HANDOFF.md) | Implementation DO list + merge gate |
 
 Android only. iOS does not allow third-party apps to read or send SMS.
 
 ## Deprecated: PC Phone Link / Setup.exe (1.x)
 
-Superseded by the phone bridge (2026-10-07). No new 1.x versions will be published. Remove it from the front PC once the phone bridge passes its smoke test (`uninstall.ps1`, see the install doc).
+Superseded by the phone bridge (2026-10-07). No new 1.x versions will be published. Remove it from the front PC after go-live (`uninstall.ps1`, see the install doc).
 
 The feed below stays live only so already-installed POS clients keep getting HTTP 200 instead of failing update checks. Do not bump it.
 

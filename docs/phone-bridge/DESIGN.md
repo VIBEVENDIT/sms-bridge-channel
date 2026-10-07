@@ -1,154 +1,128 @@
-# 폰 SMS 브리지 v2 — 설계 · 우선순위 · 수용기준
+# 호텔 SMS 브리지 v3 — 설계
 
-Owner: 영미 (설계/구현/배포) · 리드: Claude (개발팀장) · 구현: GPT Astra Max · 요청: Jason 2026-10-07 via 김철수
+Owner: 영미 · 리드/머지 게이트: Claude (개발팀장) · 구현·QA: GPT Astra Max · 요청: Jason 2026-10-07 via 김철수
 
-PC Phone Link / Setup.exe (1.x) 경로를 **폐기**하고, 호텔 폰에 설치한 SMS 게이트웨이 앱이 직접 Vercel 웹훅으로 붙는 구조로 바꾼다. Slack `#lounge-호텔앳강남`에서 수신·발신·자동회신이 모두 보이게 한다.
+같이 읽을 문서: [LOUNGE-FORMAT.md](./LOUNGE-FORMAT.md) · [AUTO-REPLY.md](./AUTO-REPLY.md) · [ACCEPTANCE.md](./ACCEPTANCE.md) · [HANDOFF.md](./HANDOFF.md) · [INSTALL-ANDROID.md](./INSTALL-ANDROID.md)
 
-## 1. 조사 결과 (현 상태)
+## 0. 목표 (Jason 필수 범위, 전부 P0)
+
+1. 폰 설치만. PC Phone Link / Setup.exe 폐기.
+2. 호텔 폰의 **수신·발신 문자 전부**(SMS·LMS·MMS, Slack발·폰 직접발 포함)가 `#lounge-호텔앳강남`(`C0AN0CDAADC`)에 **누락 0 · 중복 0**.
+3. 호텔메일과 동일 수준 자동회신 — FAQ/정책 답변, 답장 필요한 것만, OTP·광고·시스템 스킵 ([AUTO-REPLY.md](./AUTO-REPLY.md)).
+4. lounge 형식 = 기존 `*[메일수신]*` / `:loading:` / `:완료:` 핸드오프 형식 ([LOUNGE-FORMAT.md](./LOUNGE-FORMAT.md)).
+5. 실폰 E2E QA PASS 전에는 go-live 금지 ([ACCEPTANCE.md](./ACCEPTANCE.md)).
+
+## 1. 현 상태 (조사)
 
 | 항목 | 위치 | 상태 |
 | --- | --- | --- |
-| PC 브리지 (.NET tray, Setup.exe, auto-update) | `VIBEVENDIT/hotel-at-gangnam-maknae` PR #2–#6 | 미머지. Phone Link 토스트 파싱 → Grok 웹훅. 발신은 `sms:` URI 반자동(TODO). v1.5.0 zip Release 미게시(404) |
-| 공개 업데이트 채널 | 이 레포 `manifest.json` / `commands.json` | live 200. 설치된 POS가 폴링 중 |
-| Slack 막내 봇 + 메일 triage | maknae PR #1 (`cursor/realtime-ops-webhooks-746b`) | 미머지, Vercel 미배포. Next.js 16, `lib/slack.ts` `postLoungeTriage`, `lib/classify.ts` (광고/noreply/이미회신 skip), `lib/dedup.ts`(in-memory) |
-| 호텔메일 "자동회신" | 접근 가능한 VIBEVENDIT 레포에 발송 코드 없음 | 현재 메일 플로우 = **회신 필요 건만 lounge에 올림**(`메일\|발신\|내용` + 권장 핸들링). SMS 자동회신은 이 분류 규칙 + 1차 응답 발송으로 정의한다 (§4) |
-| Vercel | team `venditjasons-projects` | `hotel-at-gangnam-maknae` 프로젝트 **없음** → 구현 PR에서 생성 |
+| PC 브리지 (.NET tray, Setup.exe) | `hotel-at-gangnam-maknae` PR #2–#6 | 미머지. Phone Link 토스트 파싱 → 수신만, 발신 반자동. **폐기** |
+| 공개 업데이트 채널 | 이 레포 `manifest.json` | live, 설치된 POS 폴링 중. 버전 bump 금지 |
+| 막내 봇 (Slack/Gmail/채널톡 웹훅) | maknae PR #1 (`cursor/realtime-ops-webhooks-746b`) | 미머지, Vercel 프로젝트 없음. Next.js 16, `lib/slack.ts`, `lib/classify.ts` |
+| 메일 자동회신 | 김철수 에이전트(Slack 봇 `B0C080ZKPGW`)가 LLM으로 정책 기반 회신 | 코드 레포 없음. 규칙은 lounge 스레드에 Jason 지시로 축적 → [AUTO-REPLY.md](./AUTO-REPLY.md) §1에 출처 링크로 정리 |
+| lounge 형식 | `*[메일수신]* :loading:` + `*필드* = 값`, `*[지메일 발송]*` | Jason 지시로 확정 → [LOUNGE-FORMAT.md](./LOUNGE-FORMAT.md) |
+| 호텔 폰 | 앳 강남 업무폰 010-5198-5442 (`#호텔-앳-강남` 채널 설명) | **OS 미확인** — Android 아니면 G0 차단 |
 
-결론: 새 서비스를 만들지 않는다. **maknae Next.js 앱(PR #1 기반)에 SMS 라우트 2개 + lib 몇 개를 추가**하고, 폰에는 오픈소스 앱을 설치한다. 커스텀 APK는 만들지 않는다 (P2).
+## 2. 결정: 자체 Android 앱 (v2의 sms-gate.app 안 폐기)
 
-## 2. 아키텍처
+v2 초안(sms-gate.app)은 **요구 2 불충족**이라 폐기한다.
+
+- sms-gate는 자기 앱으로 보낸 문자만 `sms:sent` 이벤트를 낸다. 직원이 삼성 메시지로 직접 보낸 답장은 Slack에 안 남는다 → "발신 전부" 위반.
+- 발신 본문·번호가 제3자 클라우드(api.sms-gate.app)를 경유 → 게스트 개인정보.
+- 수신(웹훅)과 직접발신(별도 앱)을 두 앱으로 나누면 중복 판정이 fuzzy match가 된다 → "중복 0" 보장 불가.
+
+채택: **AtGangnam SMS Bridge** (Kotlin, 이 프로젝트 소유, 사이드로드 APK). 기본 문자앱은 삼성 메시지 그대로.
 
 ```
- 호텔 폰 (Android, 호텔 SIM)
- └─ SMS Gateway for Android (sms-gate.app, Cloud mode)
-      │  sms:received / sms:sent / sms:delivered / sms:failed / system:ping
-      │  HTTPS POST, X-Signature = HMAC-SHA256(rawBody + X-Timestamp)
-      ▼
- Vercel: hotel-at-gangnam-maknae (Next.js)
-   POST /api/webhooks/sms-gate ──► classify ──► Slack lounge 「앳강남 막내」
-        │                            │            문자|010-1234-5678|내용 + 권장 핸들링
-        │                            └─► decideAutoReply ─► (on) send / (dry-run) 스레드 메모
-        │
-   POST /api/webhooks/slack  ◄── Slack Events (message.channels, lounge 스레드 답글)
-        │   ">> 내용" 인 사람 답글만
-        └─► sms-gate Cloud API  POST https://api.sms-gate.app/3rdparty/v1/messages
-                                   (폰이 FCM 푸시로 받아 실제 발송)
-   Upstash Redis (Vercel Marketplace): idempotency · thread 매핑 · 쿨다운 · 캡 · 수신거부
+ 호텔 폰 (Android, 호텔 SIM, 채팅+ OFF, 상시 충전)
+ └─ AtGangnam SMS Bridge (foreground service, type=remoteMessaging)
+      ├─ Telephony provider 읽기: content://sms (inbox=1, sent=2), content://mms (inbox, sent)
+      │    ContentObserver + 60s sweep + 부팅/재시작 시 sweep, provider _id 워터마크
+      ├─ 로컬 원장(Room): providerKey 유니크 → 서버 ack 전까지 무한 재시도
+      ├─ 발송: SmsManager.sendMultipartTextMessage + sent/delivered PendingIntent
+      └─ HTTPS
+           POST /api/sms/device/events        (수신·발신·발송결과·heartbeat 배치)
+           POST /api/sms/device/attachments   (MMS 첨부)
+           GET  /api/sms/device/outbox?wait=25 (long-poll, 발송 지시 수신)
+                 ▲
+ Vercel: hotel-at-gangnam-maknae (Next.js, PR #1 위에)
+   ├─ ingest → 원장(KV) → Slack 게시 (스레드/상태 이모지)  [LOUNGE-FORMAT]
+   ├─ 수신 → 규칙 분류 → LLM(AI Gateway, KB 근거) → 가드 → outbox  [AUTO-REPLY]
+   ├─ POST /api/webhooks/slack: 스레드 `>> 본문` → outbox, 상태 reaction → parent 갱신
+   ├─ Cron 1분: Slack 미게시 원장 재게시 · 디바이스 오프라인 경보 · 대사(reconcile)
+   └─ Upstash Redis (Vercel Marketplace)
 ```
 
-선정 이유: sms-gate.app (capcom6/android-sms-gateway, Apache-2.0)은 기본 문자앱을 대체하지 않고(직원은 삼성 메시지 계속 사용), 서명 웹훅 + 약 2일 지수 재시도 + 클라우드 발송 API를 이미 제공한다. 폰에 인바운드 포트를 열 필요가 없다.
+iOS: 서드파티 앱의 SMS 읽기/발송을 Apple이 막음 → **미지원**. 호텔 폰이 iPhone이면 G0 차단, 보고.
 
-iOS: 서드파티 앱의 SMS 읽기/무인 발송을 Apple이 허용하지 않는다. **미지원**. 호텔 폰이 iPhone이면 호텔 번호용 Android 단말(중고 가능)에 SIM을 옮기는 것이 유일한 정식 경로.
+## 3. 정확히 한 번 (누락 0 · 중복 0) 설계
 
-## 3. 계약 (Contracts)
+### 3.1 폰 → 서버 (누락 0)
 
-### 3.1 인바운드 `POST /api/webhooks/sms-gate`
+- **원천은 provider 한 곳**: SMS_RECEIVED 브로드캐스트는 sweep 트리거로만 쓴다(브로드캐스트 메시지를 직접 보고하지 않음 → 이중 보고 경로 없음).
+- `providerKey` = `sms:{_id}` / `mms:{_id}`. 로컬 Room 테이블 `reported(providerKey PK, type, state[pending|acked], attempts)`.
+- sweep: `_id > watermark(type)` 전부 + `date >= now-48h` 재확인(워터마크 손상 대비). 새 행 → pending 삽입(PK 충돌 = 이미 있음).
+- 업로드: pending 배치(≤50) → 서버 `acked[]` 받은 것만 acked. 네트워크 실패 → 지수 백오프(최대 5분), 데이터 삭제 없음.
+- MMS: 텍스트 part 결합 + 첨부(image/*, ≤10MB 각) 별도 업로드. 한국 LMS(장문)는 MMS로 저장되므로 **MMS 처리는 P0**.
+- 앱 자체 발송분: provider sent 행과 outbox 매칭(`address`+`body`+`|date-sentAt|<120s`) → 이벤트에 `outboxId` 포함. 서버도 같은 규칙으로 2차 매칭.
+- Heartbeat 60초: `{appVersion, permissions, batteryOptExempt, charging, network, sims[], maxId{sms,mms}, counts{yyyymmdd:{in,out}}}`.
 
-- 서명: `hex(HMAC_SHA256(SMS_GATE_WEBHOOK_SIGNING_KEY, rawBody + X-Timestamp))` == `X-Signature` (constant-time). `|now - X-Timestamp| > 300s` 거부. 키 미설정 또는 불일치 → `401`, 부작용 없음 (**fail closed**; PR #1의 "env 없으면 통과"와 다름).
-- 처리 이벤트: `sms:received`, `sms:sent`, `sms:delivered`, `sms:failed`, `system:ping`. 그 외 → `200 {ignored}`.
-- 응답은 30초 내 2xx. Slack/발송은 `after()`(Next) 또는 await 하되 전체 < 10s.
-- Idempotency: 바디 `id` 로 `SET sms:evt:{id} NX EX 604800`. 이미 있으면 `200 {duplicate}`.
-- 번호 정규화: `normalizeKrPhone()` → E.164 (`01012345678`, `+821012345678` → `+821012345678`). 표시는 `010-1234-5678`.
+### 3.2 서버 (중복 0)
 
-### 3.2 Slack 게시 형식 (메일 플로우와 동일 톤)
+- 이벤트 키 `{deviceId}:{providerKey}` → `SET sms:msg:{key} NX` 실패면 이미 처리 → ack만 반환.
+- Slack 게시는 원장 기록 후 `after()`에서. 게시 성공 시 `slackTs` 저장. 게시 락 `sms:post:{key}` NX EX 60 → 동시 경로(after/cron) 이중 게시 불가.
+- Cron(1분): `slackTs` 없는 원장 → 재게시. 앱이 보낸 일별 counts ≠ 서버 counts → heartbeat 응답에 `resync:{sinceMs}` → 앱이 그 구간 재보고(멱등).
+- 앱 발송 매칭 실패 시 서버 2차 매칭 → 실패해도 `*[문자발송]* 발송경로 = 호텔폰 직접`으로 1건 게시(누락보다 안전). 단, 같은 outbox가 이미 게시됐으면 중복 아님 판정을 위해 outbox 원장에 `providerKey` 기록.
 
-- 번호당 스레드 1개: `sms:thread:{e164}` → parent `ts` (EX 30일). 없으면 새 parent, 있으면 그 스레드에 `reply_broadcast: true`.
-- Parent: `문자|010-1234-5678|<본문 300자 컷>` + 줄바꿈 `권장 핸들링: …` (`postLoungeTriage` 재사용, username 「앳강남 막내」).
-- 분류 태그(§4.1)가 `ad`/`system` 이면 parent 앞에 `[광고]`/`[시스템]` 표시하고 권장 핸들링 생략. **모든 인바운드는 lounge에 남긴다** (메일처럼 버리지 않음 — 폰 번호 수신함은 lounge가 유일한 사본).
-- 역매핑: `sms:ts:{parentTs}` → e164 (EX 30일).
+### 3.3 서버 → 폰 발송 (최대 1회, 결과 가시화)
 
-### 3.3 Slack → SMS `POST /api/webhooks/slack` (기존 라우트 확장)
+- outbox 항목 `{id, to, text, origin: auto|slack, slackUser?, convKey}` → 앱 long-poll 응답(lease 60초).
+- 앱: 로컬에 `sending` 기록 **후** SmsManager 호출. 결과 PendingIntent → `send_result{sent|failed(reason)|delivered}` 보고.
+- 앱 크래시로 결과 없는 `sending` → 재전송하지 않고 `unknown` 보고 → Slack `발송 상태 = 확인 필요 :loading:`.
+- 서버: lease 만료 + 미ack → 재전달은 앱이 그 id를 `sending/sent`로 모를 때만(앱이 id 원장 보유) → 이중 발송 불가.
 
-- `SLACK_SIGNING_SECRET` 서명 필수 (미설정 시 `event_callback` 처리 거부, `url_verification` 만 허용).
-- 대상: `event.type == "message"`, `channel == SLACK_LOUNGE_CHANNEL_ID`, `thread_ts` 있음, `subtype` 없음, `bot_id` 없음, `user != 봇 자신`.
-- 발송 트리거: 텍스트가 `SMS_OUTBOUND_PREFIX`(기본 `>>`)로 시작. 접두어 없는 스레드 대화는 **내부 메모로 간주, 발송 안 함**.
-- 선택: `SMS_SLACK_ALLOWED_USER_IDS` 설정 시 해당 user만 발송 가능.
-- Dedup: `SET slack:evt:{event_id} NX EX 86400`, `X-Slack-Retry-Num` 재시도 무시. 3초 내 200 후 `after()`로 발송.
-- 발송: `POST {SMS_GATE_BASE_URL}/3rdparty/v1/messages` (Basic `SMS_GATE_USERNAME:SMS_GATE_PASSWORD`, `textMessage.text`, `phoneNumbers:[e164]`, `deviceId` 선택 — 필드명은 OpenAPI로 확인). 응답 `id` → `sms:out:{id}` = `{ts, kind:"staff"}` EX 7일. `sms:human:last:{e164}` = now.
-- 피드백: 수락 → 직원 메시지에 `:outbox_tray:` reaction. `sms:delivered` → `:white_check_mark:`. `sms:failed` → `:x:` + 스레드에 사유.
-- 폰에서 삼성 메시지로 직접 보낸 문자는 sms-gate가 이벤트를 내지 않는다 → **Slack에 안 보임** (알려진 한계, P2). 운영 규칙: 직원 회신은 Slack `>>` 로.
+### 3.4 인증
 
-### 3.4 State (Upstash Redis via Vercel Marketplace)
+- 페어링: 앱 첫 실행 → 서버 URL(빌드 기본값) + **일회용 페어링 코드**(`SMS_BRIDGE_PAIRING_CODE`, Vercel env, 48h 내 1회) → `POST /api/sms/device/pair` → 서버가 32바이트 device token 발급(KV에 sha256만 저장), 코드 소진.
+- 이후 모든 디바이스 요청 `Authorization: Bearer <token>`. 토큰 회전: 재페어링. 분실 시 `/api/sms/device/revoke`(관리 시크릿).
+- Slack: `SLACK_SIGNING_SECRET` 서명 필수(fail closed). Cron: `CRON_SECRET`.
 
-`KV_REST_API_URL`/`KV_REST_API_TOKEN` 또는 `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` 둘 다 허용. 테스트용 in-memory 구현을 같은 인터페이스로. KV 장애 시: 인바운드 Slack 게시는 진행, 자동회신은 `skip:kv-unavailable`, Slack→SMS는 `:x:` + "저장소 오류".
+## 4. 상태 저장 (Upstash Redis)
 
 | Key | 값 | TTL |
 | --- | --- | --- |
-| `sms:evt:{id}` / `slack:evt:{event_id}` | 1 | 7d / 1d |
-| `sms:thread:{e164}` / `sms:ts:{ts}` | ts / e164 | 30d |
-| `sms:out:{gatewayMsgId}` | `{ts, kind, staffMsgTs?}` | 7d |
-| `sms:ar:last:{e164}` | 발송 시각 (SET NX = at-most-once) | 쿨다운 |
-| `sms:ar:count:{YYYYMMDD KST}` | INCR | 2d |
-| `sms:human:last:{e164}` | 직원 발신 시각 | human grace |
+| `sms:msg:{deviceId}:{providerKey}` | `{dir, e164, body, ts, kind, slackTs?, convKey, outboxId?}` | 90d |
+| `sms:post:{key}` | 게시 락 | 60s |
+| `sms:conv:{e164}` | `{parentTs, lastActivityMs, status, guestName?}` | 30d |
+| `sms:conv:ts:{parentTs}` | e164 | 30d |
+| `sms:outbox:{id}` | outbox 항목 + 상태 + `providerKey?` | 30d |
+| `sms:outbox:pending` | 리스트 | — |
+| `sms:ar:evt:{key}` | 자동회신 1회 락 | 7d |
+| `sms:ar:num:{e164}:{yyyymmdd}` | 일 카운트 | 2d |
+| `sms:ar:hold:{e164}` | 보류응답 쿨다운 | 24h |
+| `sms:ar:last:{e164}` | 마지막 자동회신 ms | 24h |
+| `sms:ar:day:{yyyymmdd}` | 전체 일 카운트 | 2d |
+| `sms:human:last:{e164}` | 직원 발신 ms | 24h |
 | `sms:optout:{e164}` | 1 | 없음 |
-| `sms:ping:last` | system:ping 시각 | 없음 |
+| `sms:device:{id}` | 토큰 해시, 마지막 heartbeat | 없음 |
+| `sms:count:{yyyymmdd}:{in|out}` | 원장 카운트 | 7d |
 
-## 4. 자동회신 (호텔메일형)
+KV 장애: 이벤트에 5xx → 앱이 재시도(누락 없음). Slack 게시·자동회신 없음.
 
-### 4.1 분류 `classifySms({sender, body})` → `guest | ad | system | self`
+## 5. Env (Vercel only, 레포엔 키 이름만)
 
-- `self`: sender == `HOTEL_SMS_NUMBER`.
-- `ad`: 본문이 `(광고)`로 시작, 또는 `무료수신거부`/`수신거부 080`/`080-` 포함 (정보통신망법 표기).
-- `system`: sender가 한국 휴대폰(`+8210/11/16/17/18/19`)이 아님(15xx/16xx/18xx 대표번호, 단축번호, 국제), 또는 본문에 `인증번호`/`인증 번호`/`verification code`/`[Web발신]` 류 + 숫자 4–8자리, 또는 자동응답 흔적(`자동응답`, `부재중`, `automated`, `auto-reply`, `(자동응답)`).
-- 그 외 `guest`. OTA(야놀자/여기어때/아고다 등) 대표번호 알림은 `system`으로 떨어져 lounge 게시만 된다 — 메일 분류와 같은 의도.
+기존: `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`(필수), `SLACK_LOUNGE_CHANNEL_ID`(`C0AN0CDAADC`).
+신규: `SMS_BRIDGE_STAGE`(`qa|live`, 기본 `qa`), `SMS_QA_CHANNEL_ID`, `SMS_QA_ALLOWED_NUMBERS`(쉼표), `SMS_BRIDGE_PAIRING_CODE`, `SMS_BRIDGE_ADMIN_SECRET`, `CRON_SECRET`, `HOTEL_SMS_NUMBER`(`01051985442` 확인 후), `SMS_AUTO_REPLY_MODE`(`off|shadow|on`, 기본 `shadow`), `SMS_AI_MODEL`, `SMS_URGENT_MENTION`(기본 `<!here>`), KV(`KV_REST_API_URL`/`KV_REST_API_TOKEN` 또는 `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`). AI Gateway는 Vercel OIDC(키 없음), 로컬만 `AI_GATEWAY_API_KEY`.
 
-### 4.2 결정 `decideAutoReply(input, state, config)` → `{action: "send" | "dry-run" | "skip", reason}`
+Slack 앱: scopes `chat:write`, `chat:write.customize`, `channels:history`, `reactions:read`, `reactions:write`, `files:write`; events `message.channels`, `reaction_added`; Request URL `/api/webhooks/slack`; 봇을 lounge + QA 채널에 초대.
 
-순서대로 평가, 첫 매치에서 종료 (pure function, 전부 unit test):
+## 6. 단계 (stage)
 
-1. `mode == off` → skip `mode-off`
-2. class != `guest` → skip `class-<x>`
-3. `sms:optout` → skip `opted-out`
-4. 본문이 수신거부 키워드(`STOP`, `수신거부`, `그만`, `차단`) → optout 기록 + skip `opt-out-request`
-5. `sms:human:last` < `SMS_AUTO_REPLY_HUMAN_GRACE_HOURS`(12h) → skip `human-active` (메일의 "이미 회신한 스레드" 대응)
-6. `sms:ar:last` 존재 (쿨다운 `SMS_AUTO_REPLY_COOLDOWN_HOURS`, 24h) → skip `cooldown`
-7. 오늘 카운트 >= `SMS_AUTO_REPLY_DAILY_CAP`(50) → skip `daily-cap` + lounge 경고 1회/일
-8. `SMS_AUTO_REPLY_TEXT` 비어있음 → skip `no-template`
-9. `mode == dry-run` → `dry-run` (쿨다운 키는 기록하지 않음)
-10. → `send`
+- `qa`: 모든 게시 → `SMS_QA_CHANNEL_ID`. 자동회신·발송은 `SMS_QA_ALLOWED_NUMBERS`에게만. 그 외 번호는 원장+QA 채널 게시만(발송 0).
+- `live`: lounge 게시, 전체 번호. **리드 PASS 판정([ACCEPTANCE.md](./ACCEPTANCE.md) §4) 후에만** env 전환.
 
-`send` 시: `SET sms:ar:last:{e164} NX EX cooldown` 성공한 경우에만 발송(재시도·동시 웹훅에도 최대 1회), INCR count, `sms:out:{id}` kind=`auto`. 스레드에 `🤖 자동회신 발송: <text>` (dry-run이면 `🤖 [DRY RUN] 자동회신 예정: <text> (사유: …)`). skip도 `guest` 클래스면 스레드에 한 줄 `🤖 자동회신 생략: <reason>` (디버그 가능성 > 노이즈).
+## 7. 우선순위
 
-루프 가드 요약: (a) `sms:received`만 자동회신 트리거 — `sms:sent/delivered`는 절대 아님, (b) 자기 번호 · 비휴대폰 · 자동응답 본문 skip, (c) 번호당 24h 1회 SET NX, (d) 일일 캡, (e) Slack 봇/편집/subtype 메시지는 발송 트리거 아님, (f) 기본 모드 `dry-run`.
-
-### 4.3 템플릿
-
-`SMS_AUTO_REPLY_TEXT` (Vercel env, 70자 이하 권장 = SMS 1건 UCS-2). 예:
-
-```
-[호텔앳강남] 문자 감사합니다. 프런트에서 확인 후 곧 답장드리겠습니다. (자동응답)
-```
-
-`(자동응답)` 접미어는 필수 (상대가 봇이어도 우리 쪽 분류에서 걸리고, 게스트에게 투명).
-
-## 5. Env (Vercel only, `.env.example`에는 키 이름만)
-
-`SMS_GATE_BASE_URL`(기본 `https://api.sms-gate.app`), `SMS_GATE_USERNAME`, `SMS_GATE_PASSWORD`, `SMS_GATE_DEVICE_ID`(선택), `SMS_GATE_WEBHOOK_SIGNING_KEY`, `HOTEL_SMS_NUMBER`, `SMS_AUTO_REPLY_MODE`(`off|dry-run|on`, 기본 `dry-run`), `SMS_AUTO_REPLY_TEXT`, `SMS_AUTO_REPLY_COOLDOWN_HOURS`(24), `SMS_AUTO_REPLY_DAILY_CAP`(50), `SMS_AUTO_REPLY_HUMAN_GRACE_HOURS`(12), `SMS_OUTBOUND_PREFIX`(`>>`), `SMS_SLACK_ALLOWED_USER_IDS`(선택), KV 키(§3.4). 기존: `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`(이제 필수), `SLACK_LOUNGE_CHANNEL_ID`(기본 `C0AN0CDAADC` — #lounge-호텔앳강남 맞는지 배포 시 `conversations.info`로 확인).
-
-Slack 앱 추가 설정: scopes `channels:history`, `reactions:write` (기존 `chat:write`, `chat:write.customize`), Event Subscriptions `message.channels`, Request URL `/api/webhooks/slack`, 봇을 lounge에 초대. 스코프 변경 시 앱 재설치(워크스페이스 관리자).
-
-## 6. 우선순위
-
-- **P0 (머지 게이트)**: §3.1–3.4, §4 전부, register-webhooks 스크립트, `.env.example`, 테스트, Vercel 프로젝트 생성·배포, 이 레포 문서 링크.
-- **P1**: `system:ping` 15분 → `GET /api/sms/health` (`lastPingAt`), Vercel Cron 30분마다 60분 이상 무응답이면 lounge 경고(1회/6h). `mms:downloaded` 본문 텍스트 게시(첨부는 "[사진 n장]"만).
-- **P2**: 폰에서 직접 보낸 문자 동기화(커스텀 앱 또는 sent-box 지원 필요), JWT 인증 전환, sms-gate E2E 암호화, `/sms 010… 내용` 신규 대화 슬래시 커맨드, 메일 자동회신이 별도로 존재하면 템플릿 문구 통일.
-
-## 7. 수용기준 (Acceptance Criteria)
-
-리뷰어(리드)는 아래를 PR 설명의 체크리스트 + 테스트 이름으로 대조한다.
-
-| # | 기준 | 검증 |
-| --- | --- | --- |
-| AC1 | 유효 서명 `sms:received` → lounge에 `문자\|010-…\|본문` 1건, 같은 번호 재수신은 같은 스레드 | unit (Slack mock) + 실폰 스모크 |
-| AC2 | 서명 누락/불일치/5분 초과 timestamp → 401, Slack·발송 호출 0 | unit |
-| AC3 | 같은 `id` 웹훅 2회 → Slack 게시 1회 | unit |
-| AC4 | lounge 스레드 `>> 안녕하세요` (사람) → sms-gate send 1회, 번호 = 스레드 매핑 번호, 텍스트에서 접두어 제거 | unit + 실폰 |
-| AC5 | 접두어 없는 답글, 봇 메시지, `message_changed`, 스레드 아닌 메시지, Slack 재시도 → send 0 | unit |
-| AC6 | `decideAutoReply` §4.2 1–10 각 분기 테이블 테스트 (최소 12 케이스: 광고, 인증번호, 1588 번호, 자기번호, 자동응답 본문, STOP, human-active, cooldown, cap, no-template, dry-run, send) | unit |
-| AC7 | 동시 2개 `sms:received`(같은 번호, 다른 id) → 자동회신 send 최대 1회 | unit (in-memory KV with NX) |
-| AC8 | `sms:sent/delivered/failed` 는 자동회신을 절대 트리거하지 않고 해당 Slack 메시지 reaction/스레드만 갱신 | unit |
-| AC9 | 기본 env로 배포 시 `SMS_AUTO_REPLY_MODE` = dry-run (실발송 0) | unit (env 파서) |
-| AC10 | 레포에 시크릿 없음: `.env.example` 값 비어있음, 테스트 fixture 키는 명백한 dummy | 리뷰 + `git grep` |
-| AC11 | `npm test`, `npm run lint`, `npm run build` green (CI) | CI |
-| AC12 | Vercel production 배포, `GET /api/health` 200, 웹훅 URL 2개가 401(무서명) 응답 | curl |
-| AC13 | 설치 문서(`INSTALL-ANDROID.md`) 단계대로 실폰 1대에서 수신 → lounge, `>>` → 폰 발신 확인 (사람 단계 포함) | 철수 스모크 리포트 |
+전부 P0: 위 §2–§6, [AUTO-REPLY.md](./AUTO-REPLY.md), [LOUNGE-FORMAT.md](./LOUNGE-FORMAT.md), 설치·APK 배포, 실폰 QA.
+P1 (go-live 후): PMS(pms.hoteliers.space) 전화번호→투숙객명·기간 자동 채움, 앱 인앱 업데이트 알림, 대시보드.
+P2: 다중 디바이스, RCS 수신(플랫폼상 불가 — 채팅+ OFF로 회피).
