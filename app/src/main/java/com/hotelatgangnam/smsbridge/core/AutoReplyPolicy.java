@@ -18,24 +18,12 @@ public final class AutoReplyPolicy {
             String rawSender,
             String inboundBody,
             boolean matchesRecentOutbound) {
-        if (!settings.autoReplyEnabled) {
-            return Decision.suppress("disabled");
-        }
-
         String senderLabel =
                 rawSender == null ? "" : rawSender.toUpperCase(Locale.ROOT).replace("-", "");
         if (senderLabel.contains("NOREPLY")
                 || senderLabel.contains("DONOTREPLY")
                 || senderLabel.contains("발신전용")) {
             return Decision.suppress("automated_or_noreply");
-        }
-
-        String sender = PhoneNumberNormalizer.normalize(rawSender);
-        if (!PhoneNumberNormalizer.isLikelyPersonalMobile(sender)) {
-            return Decision.suppress("non_mobile_sender");
-        }
-        if (settings.isNumberBlocked(sender)) {
-            return Decision.suppress("blocked_sender");
         }
 
         String canonicalBody = canonical(inboundBody);
@@ -46,10 +34,20 @@ public final class AutoReplyPolicy {
             return Decision.suppress("opt_out");
         }
 
+        String sender = PhoneNumberNormalizer.normalize(rawSender);
         HotelReplyPolicy.Plan plan =
                 hotelReplyPolicy.classify(inboundBody, settings.renderAutoReply(sender));
         if (!plan.shouldReply) {
             return Decision.suppress(plan.reason);
+        }
+        if (!settings.autoReplyEnabled) {
+            return Decision.suppress("disabled");
+        }
+        if (!PhoneNumberNormalizer.isLikelyPersonalMobile(sender)) {
+            return Decision.suppress("non_mobile_sender");
+        }
+        if (settings.isNumberBlocked(sender)) {
+            return Decision.suppress("blocked_sender");
         }
 
         String renderedReply = plan.replyBody;
