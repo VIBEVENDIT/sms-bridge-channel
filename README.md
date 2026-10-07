@@ -1,17 +1,30 @@
-# SMS bridge public update channel
+# SMS bridge public channel
 
-Anonymous feed for the Hotel at Gangnam front POS.
+Public docs + update feed for the Hotel at Gangnam SMS bridge. Do not put secrets here.
 
-## Live URLs (HTTP 200)
+## Current: phone bridge (v3)
+
+A small Android app on the hotel phone (AtGangnam SMS Bridge) syncs every inbound and outbound SMS/MMS to Slack `#lounge-호텔앳강남` and sends policy-based auto-replies, in the same format as the hotel mail handoff (`*[문자수신]*`, `:loading:`, `:완료:`). Release APKs are published on this repo's Releases (`android-v*`).
+
+| Doc | |
+| --- | --- |
+| [INSTALL-ANDROID.md](docs/phone-bridge/INSTALL-ANDROID.md) | Install on the hotel phone (Korean) |
+| [DESIGN.md](docs/phone-bridge/DESIGN.md) | Architecture, exactly-once sync, auth, state |
+| [LOUNGE-FORMAT.md](docs/phone-bridge/LOUNGE-FORMAT.md) | Slack message format spec |
+| [AUTO-REPLY.md](docs/phone-bridge/AUTO-REPLY.md) | Mail rule mapping, policy KB, guards |
+| [ACCEPTANCE.md](docs/phone-bridge/ACCEPTANCE.md) | Acceptance criteria, real-phone QA, release gates |
+| [HANDOFF.md](docs/phone-bridge/HANDOFF.md) | Implementation DO list + merge gate |
+
+Android only. iOS does not allow third-party apps to read or send SMS.
+
+## Deprecated: PC Phone Link / Setup.exe (1.x)
+
+Superseded by the phone bridge (2026-10-07). No new 1.x versions will be published. Remove it from the front PC after go-live (`uninstall.ps1`, see the install doc).
+
+The feed below stays live only so already-installed POS clients keep getting HTTP 200 instead of failing update checks. Do not bump it.
 
 - Manifest: https://raw.githubusercontent.com/VIBEVENDIT/sms-bridge-channel/main/manifest.json
 - CDN: https://cdn.jsdelivr.net/gh/VIBEVENDIT/sms-bridge-channel@main/manifest.json
 - Commands: https://raw.githubusercontent.com/VIBEVENDIT/sms-bridge-channel/main/commands.json
 
-`hotelat.com/sms-bridge/` and `hotel-at-gangnam-maknae.vercel.app` 404 until an org admin deploys those hosts. Do not put secrets here.
-
-## Publish a zip
-
-1. Download `sms-bridge-install.zip` from private repo Actions `sms-bridge-windows-release` (no secrets).
-2. Create Release `vX.Y.Z` on this repo and attach that zip.
-3. Bump `manifest.json` `version` + `zipUrl`.
+The `v1.5.0` `sms-bridge-install.zip` Release referenced by `manifest.json` was never published (404), so installed clients stay on their current version.
