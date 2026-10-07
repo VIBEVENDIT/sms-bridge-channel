@@ -63,9 +63,9 @@ final class BridgeQueue extends SQLiteOpenHelper {
     }
 
     synchronized boolean enqueueSlack(BridgeProcessor.SlackMessage message) {
-        String stableId = message.eventId == null || message.eventId.trim().isEmpty()
-                ? message.channelId + ":" + message.timestamp
-                : message.eventId;
+        // A thread-broadcast can produce more than one Slack envelope/event_id for one message.
+        // channel+ts is the canonical identity of the human-authored Slack message.
+        String stableId = message.channelId + ":" + message.timestamp;
         JSONObject payload = new JSONObject();
         try {
             payload.put("eventId", message.eventId);

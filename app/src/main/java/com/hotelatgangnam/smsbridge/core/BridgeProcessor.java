@@ -199,10 +199,7 @@ public final class BridgeProcessor {
     }
 
     private static String slackEventKey(SlackMessage message) {
-        String eventId = message.eventId == null || message.eventId.trim().isEmpty()
-                ? message.channelId + ":" + message.timestamp
-                : message.eventId;
-        return "slack:" + eventId;
+        return "slack:" + message.channelId + ":" + message.timestamp;
     }
 
     private static String safeError(Exception error) {

@@ -57,7 +57,16 @@ public class BridgeProcessorIntegrationTest {
         assertTrue(sms.sent.get(1).startsWith("01012345678|"));
 
         BridgeProcessor.Outcome duplicateSlack =
-                processor.handleSlack(threadReply, settings(), NOW + 3_000);
+                processor.handleSlack(
+                        new BridgeProcessor.SlackMessage(
+                                "Ev-thread-broadcast-duplicate",
+                                threadReply.channelId,
+                                threadReply.userId,
+                                threadReply.text,
+                                threadReply.timestamp,
+                                threadReply.threadTimestamp),
+                        settings(),
+                        NOW + 3_000);
         assertEquals(BridgeProcessor.Outcome.Kind.IGNORED, duplicateSlack.kind);
         assertEquals(2, sms.sent.size());
 

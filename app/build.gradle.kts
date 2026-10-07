@@ -37,7 +37,8 @@ android {
 }
 
 dependencies {
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    // 5.5.0 requires compileSdk 37, which is not yet published in the stable SDK channel.
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
 
     testImplementation("junit:junit:4.13.2")
 }
