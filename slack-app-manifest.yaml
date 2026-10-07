@@ -1,0 +1,24 @@
+display_information:
+  name: 호텔 SMS 브리지
+  description: 호텔 앳 강남 전용 Android SMS ↔ Slack 브리지
+  background_color: "#1e4d3b"
+features:
+  bot_user:
+    display_name: 호텔 SMS 브리지
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - channels:history
+      - groups:history
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.channels
+      - message.groups
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

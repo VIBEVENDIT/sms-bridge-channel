@@ -2,5 +2,14 @@
   "version": "1.5.0",
   "zipUrl": "https://github.com/VIBEVENDIT/sms-bridge-channel/releases/download/v1.5.0/sms-bridge-install.zip",
   "commandsUrl": "https://raw.githubusercontent.com/VIBEVENDIT/sms-bridge-channel/main/commands.json",
-  "commands": []
+  "commands": [],
+  "deprecated": true,
+  "deprecatedAt": "2026-10-07",
+  "deprecationMessage": "Windows Phone Link/Setup.exe 경로는 폐기되었습니다. Android 폰 앱을 사용하세요.",
+  "replacement": {
+    "platform": "android",
+    "minimumApi": 26,
+    "sourceUrl": "https://github.com/VIBEVENDIT/sms-bridge-channel",
+    "releaseGate": "docs/PHONE_E2E_CHECKLIST.md"
+  }
 }

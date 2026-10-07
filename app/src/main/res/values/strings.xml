@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">호텔 SMS 브리지</string>
+    <string name="notification_channel_name">SMS 브리지 상태</string>
+    <string name="notification_running">Slack ↔ SMS 브리지가 실행 중입니다</string>
+</resources>
